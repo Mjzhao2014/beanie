@@ -10,7 +10,7 @@ else:
 
 
 class Settings(BaseSettings):
-    mongodb_dsn: str = "mongodb://localhost:27017/beanie_db"
+    mongodb_dsn: str = "mongodb://127.0.0.1:27017/beanie_db"
     mongodb_db_name: str = "beanie_db"
 
 
