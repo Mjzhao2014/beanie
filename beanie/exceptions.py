@@ -72,3 +72,11 @@ class Deprecation(Exception):
 
 class ApplyChangesException(Exception):
     pass
+
+
+class DeleteDeniedError(Exception):
+    """
+    Raised when attempting to delete a document that is referenced by
+    other documents with a `ReferenceDeleteRules.DENY` rule.
+    """
+    pass

@@ -1,4 +1,4 @@
-from typing import Dict, ForwardRef, Type, Union
+from typing import Dict, ForwardRef, List, Type, Union
 
 from pydantic import BaseModel
 
@@ -29,3 +29,13 @@ class DocsRegistry:
             return cls._registry[forward_ref.__forward_arg__]
         else:
             return forward_ref
+
+    @classmethod
+    def all_documents(cls) -> List[Type[BaseModel]]:
+        """
+        Return all registered document classes.
+
+        This exposes the internal registry in a safe way so callers
+        do not need to touch the private `_registry` attribute.
+        """
+        return list(cls._registry.values())

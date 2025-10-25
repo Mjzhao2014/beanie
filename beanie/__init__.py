@@ -26,6 +26,7 @@ from beanie.odm.fields import (
     BackLink,
     BeanieObjectId,
     DeleteRules,
+    ReferenceDeleteRules,
     Indexed,
     Link,
     PydanticObjectId,
@@ -74,6 +75,7 @@ __all__ = [
     "BackLink",
     "WriteRules",
     "DeleteRules",
+    "ReferenceDeleteRules",
     # Custom Types
     "DecimalAnnotation",
     "BsonBinary",

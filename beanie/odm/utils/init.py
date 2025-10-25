@@ -9,7 +9,7 @@ from beanie.odm.utils.pydantic import (
     get_model_fields,
     parse_model,
 )
-from beanie.odm.utils.typing import get_index_attributes
+from beanie.odm.utils.typing import get_index_attributes, get_reference_delete_rule
 
 if sys.version_info >= (3, 10):
     from types import UnionType as TypesUnionType
@@ -41,6 +41,7 @@ from beanie.odm.fields import (
     Link,
     LinkInfo,
     LinkTypes,
+    ReferenceDeleteRules,
 )
 from beanie.odm.interfaces.detector import ModelType
 from beanie.odm.registry import DocsRegistry
@@ -144,6 +145,9 @@ class Initializer:
             for name, obj in members:
                 if inspect.isclass(obj) and issubclass(obj, BaseModel):
                     DocsRegistry.register(name, obj)
+            # Also register the model class itself in case it's defined within a local scope
+            # e.g., Document classes defined inside functions will not appear in module-level members.
+            DocsRegistry.register(model.__name__, model)
 
     @staticmethod
     def get_model(dot_path: str) -> Type["DocType"]:
@@ -413,6 +417,44 @@ class Initializer:
             if depth_level is None:
                 depth_level = cls.get_settings().max_nesting_depth
             if link_info is not None:
+                # Extract any declared reference delete rule metadata from Annotated
+                rule = get_reference_delete_rule(v)
+                if link_info.link_type in [
+                    LinkTypes.BACK_DIRECT,
+                    LinkTypes.BACK_LIST,
+                    LinkTypes.OPTIONAL_BACK_DIRECT,
+                    LinkTypes.OPTIONAL_BACK_LIST,
+                ]:
+                    if rule is not None:
+                        raise ValueError(
+                            f"ReferenceDeleteRules cannot be applied to BackLink field '{k}'"
+                        )
+                else:
+                    if rule is not None:
+                        link_info.reference_delete_rule = rule
+                    rule_value = link_info.reference_delete_rule
+                    if link_info.link_type in [LinkTypes.DIRECT, LinkTypes.OPTIONAL_DIRECT]:
+                        if rule_value == ReferenceDeleteRules.PULL_FROM_LIST:
+                            raise ValueError(
+                                f"ReferenceDeleteRules.PULL_FROM_LIST is only valid on list link fields"
+                            )
+                        if (
+                            rule_value == ReferenceDeleteRules.SET_NULL
+                            and link_info.link_type == LinkTypes.DIRECT
+                        ):
+                            # SET_NULL only allowed if link is optional
+                            raise ValueError(
+                                f"ReferenceDeleteRules.SET_NULL can only be applied to optional link fields"
+                            )
+                    elif link_info.link_type in [LinkTypes.LIST, LinkTypes.OPTIONAL_LIST]:
+                        if rule_value not in (
+                            ReferenceDeleteRules.PULL_FROM_LIST,
+                            ReferenceDeleteRules.DENY,
+                            ReferenceDeleteRules.DO_NOTHING,
+                        ):
+                            raise ValueError(
+                                f"ReferenceDeleteRules.{rule_value} invalid for list link field '{k}'"
+                            )
                 if depth_level > 0 or depth_level is None:
                     cls._link_fields[k] = link_info
                     self.check_nested_links(
