@@ -44,10 +44,13 @@ class DeleteMany(DeleteQuery):
         :return:
         """
         if not self._reference_rules_applied:
-            documents = yield from self.document_model.find_many(
+            documents_query = self.document_model.find_many(
                 self.find_query,
                 session=self.session,
-            ).to_list().__await__()
+                ignore_cache=True,
+                **self.pymongo_kwargs,
+            )
+            documents = yield from documents_query.to_list().__await__()
             for document in documents:
                 yield from document._apply_reference_delete_rules(
                     session=self.session,
@@ -83,6 +86,8 @@ class DeleteOne(DeleteQuery):
             document = yield from self.document_model.find_one(
                 self.find_query,
                 session=self.session,
+                ignore_cache=True,
+                **self.pymongo_kwargs,
             ).__await__()
             if document is not None:
                 yield from document._apply_reference_delete_rules(
