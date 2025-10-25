@@ -271,6 +271,23 @@ class DeleteRules(str, Enum):
     DELETE_LINKS = "DELETE_LINKS"
 
 
+class ReferenceDeleteRules(str, Enum):
+    """
+    Reference delete rules determine how referencing documents
+    should be handled when a parent document is deleted.
+    This is analogous to ON DELETE rules in relational databases.
+    For `Link` fields, `CASCADE` and `SET_NULL` can be used.
+    For both `Link` and list[`Link`] fields, `DENY` and `DO_NOTHING` can be used.
+    For list[`Link`] fields only, `PULL_FROM_LIST` can be used.
+    """
+
+    CASCADE = "CASCADE"
+    SET_NULL = "SET_NULL"
+    DENY = "DENY"
+    DO_NOTHING = "DO_NOTHING"
+    PULL_FROM_LIST = "PULL_FROM_LIST"
+
+
 class WriteRules(str, Enum):
     DO_NOTHING = "DO_NOTHING"
     WRITE = "WRITE"
@@ -293,6 +310,9 @@ class LinkInfo(BaseModel):
     lookup_field_name: str
     document_class: Type[BaseModel]  # Document class
     link_type: LinkTypes
+
+    # Reference delete rule configured on this link, default to do nothing
+    reference_delete_rule: ReferenceDeleteRules = ReferenceDeleteRules.DO_NOTHING
     nested_links: Optional[Dict] = None
     is_fetchable: bool = True
 

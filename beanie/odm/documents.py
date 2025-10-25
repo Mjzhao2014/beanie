@@ -43,6 +43,7 @@ from beanie.exceptions import (
     CollectionWasNotInitialized,
     DocumentNotFound,
     DocumentWasNotSaved,
+    DeleteDeniedError,
     NotSupported,
     ReplaceError,
     RevisionIdWasChanged,
@@ -63,6 +64,7 @@ from beanie.odm.fields import (
     LinkInfo,
     LinkTypes,
     PydanticObjectId,
+    ReferenceDeleteRules,
     WriteRules,
 )
 from beanie.odm.interfaces.aggregate import AggregateInterface
@@ -107,6 +109,7 @@ from beanie.odm.utils.state import (
     saved_state_needed,
 )
 from beanie.odm.utils.typing import extract_id_class
+from beanie.odm.registry import DocsRegistry
 
 if IS_PYDANTIC_V2:
     from pydantic import model_validator
@@ -887,6 +890,7 @@ class Document(
         :return: Optional[DeleteResult] - pymongo DeleteResult instance.
         """
 
+        # If configured, delete links that are owned by this document
         if link_rule == DeleteRules.DELETE_LINKS:
             link_fields = self.get_link_fields()
             if link_fields is not None:
@@ -921,9 +925,149 @@ class Document(
                                 ]
                             )
 
-        return await self.find_one({"_id": self.id}).delete(
-            session=session, bulk_writer=bulk_writer, **pymongo_kwargs
+        # Before removing this document, apply reference delete rules on
+        # other documents which have link fields pointing to this document.
+        await self._apply_reference_delete_rules(
+            link_rule=link_rule,
+            session=session,
+            bulk_writer=bulk_writer,
+            **pymongo_kwargs,
         )
+
+        return await self.find_one({"_id": self.id}).delete(
+            session=session,
+            bulk_writer=bulk_writer,
+            _reference_rules_applied=True,
+            **pymongo_kwargs,
+        )
+
+    async def _apply_reference_delete_rules(
+        self,
+        link_rule: DeleteRules = DeleteRules.DO_NOTHING,
+        session: Optional[AsyncIOMotorClientSession] = None,
+        bulk_writer: Optional[BulkWriter] = None,
+        **pymongo_kwargs: Any,
+    ) -> None:
+        """
+        Scan all registered document models for link fields pointing at this
+        document's type and apply any configured `ReferenceDeleteRules`
+        before deleting this document.
+
+        DENY rules take priority over other rules and will abort deletion
+        if any references exist. CASCADE will delete referencing documents.
+        SET_NULL will null out optional link fields. PULL_FROM_LIST will
+        remove references from list link fields. DO_NOTHING will skip checks.
+        """
+
+        # Build up list of actions to run after deny checks pass
+        cascade_queries: List[Any] = []
+        set_null_updates: List[Tuple[Any, Dict[str, Any]]] = []
+        pull_updates: List[Tuple[Any, Dict[str, Any]]] = []
+        # First scan for any DENY references and raise if found
+        for doc_cls in DocsRegistry.all_documents():
+            # Skip any registered models that are not Document subclasses
+            if not issubclass(doc_cls, Document):
+                continue
+            link_fields = doc_cls.get_link_fields()
+            if link_fields is None:
+                continue
+
+            for field_name, link_info in link_fields.items():
+                # Only consider references whose declared target matches this
+                # document (or one of its base classes).
+                target_cls = DocsRegistry.evaluate_fr(
+                    link_info.document_class
+                )
+                if not isinstance(target_cls, type):
+                    continue
+                if not issubclass(self.__class__, target_cls):
+                    continue
+
+                rule = getattr(
+                    link_info,
+                    "reference_delete_rule",
+                    ReferenceDeleteRules.DO_NOTHING,
+                )
+
+                if rule == ReferenceDeleteRules.DO_NOTHING:
+                    continue
+
+                # Build filter expression to match documents referencing self
+                expr = getattr(doc_cls, field_name).id == self.id
+                query = doc_cls.find(
+                    expr,
+                    session=session,
+                    **pymongo_kwargs,
+                )
+                if rule == ReferenceDeleteRules.DENY:
+                    # Short-circuit if any doc references this one
+                    if await query.exists():
+                        raise DeleteDeniedError(
+                            f"Deletion denied for {self.__class__.__name__} "
+                            f"as it is referenced by "
+                            f"{doc_cls.__name__}.{field_name}"
+                        )
+                elif rule == ReferenceDeleteRules.CASCADE:
+                    cascade_queries.append(query)
+                elif rule == ReferenceDeleteRules.SET_NULL:
+                    set_null_updates.append(
+                        (query, {"$set": {field_name: None}})
+                    )
+                elif rule == ReferenceDeleteRules.PULL_FROM_LIST:
+                    # Build DBRef for this document to pull from list fields
+                    ref = DBRef(
+                        collection=self.get_settings().name,
+                        id=self.id,
+                    )
+                    pull_updates.append(
+                        (query, {"$pull": {field_name: ref}})
+                    )
+
+        # Execute cascades
+        for cascade_query in cascade_queries:
+            referencing_docs = await cascade_query.to_list()
+            if referencing_docs:
+                # Delete each referencing doc, propagating internal link deletion rule
+                await asyncio.gather(
+                    *[
+                        doc.delete(
+                            link_rule=link_rule,
+                            session=session,
+                            bulk_writer=bulk_writer,
+                            **pymongo_kwargs,
+                        )  # type: ignore
+                        for doc in referencing_docs
+                        if isinstance(doc, Document)
+                    ]
+                )
+
+        # Execute set null updates
+        if set_null_updates:
+            await asyncio.gather(
+                *[
+                    query.update(
+                        update_doc,
+                        session=session,
+                        bulk_writer=bulk_writer,
+                        **pymongo_kwargs,
+                    )
+                    for query, update_doc in set_null_updates
+                ]
+            )
+
+        # Execute pull from list updates
+        if pull_updates:
+            await asyncio.gather(
+                *[
+                    query.update(
+                        update_doc,
+                        session=session,
+                        bulk_writer=bulk_writer,
+                        **pymongo_kwargs,
+                    )
+                    for query, update_doc in pull_updates
+                ]
+            )
 
     @classmethod
     async def delete_all(

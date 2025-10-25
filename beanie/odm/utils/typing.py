@@ -3,6 +3,7 @@ import sys
 from typing import Any, Dict, Optional, Tuple, Type
 
 from beanie.odm.fields import IndexedAnnotation
+from beanie.odm.fields import ReferenceDeleteRules
 
 from .pydantic import IS_PYDANTIC_V2, get_field_type
 
@@ -72,3 +73,38 @@ def get_index_attributes(field) -> Optional[Tuple[int, Dict[str, Any]]]:
     )
 
     return getattr(indexed_annotation, "_indexed", None)
+
+
+def get_reference_delete_rule(field) -> Optional[ReferenceDeleteRules]:
+    """
+    Extract a configured `ReferenceDeleteRules` enum value from an Annotated
+    field's metadata, if present.
+    Returns None if no reference delete rule is specified.
+    """
+
+    if IS_PYDANTIC_V2:
+        metadata = getattr(field, "metadata", None)
+    elif hasattr(field, "annotation") and hasattr(
+        field.annotation, "__metadata__"
+    ):
+        metadata = field.annotation.__metadata__
+    else:
+        return None
+
+    if metadata is None:
+        return None
+
+    try:
+        iter(metadata)
+    except TypeError:
+        return None
+
+    rule = next(
+        (
+            annotation
+            for annotation in metadata
+            if isinstance(annotation, ReferenceDeleteRules)
+        ),
+        None,
+    )
+    return rule
