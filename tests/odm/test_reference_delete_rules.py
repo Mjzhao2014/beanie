@@ -111,7 +111,7 @@ async def test_reference_delete_rules_on_query_delete(db):
     multi = await MultiStoriedHouseQuery(doors=[door]).insert()
     nullable = await NullableHouseQuery(door=door).insert()
 
-    await DoorQuery.find({"_id": door.id}).delete()
+    await DoorQuery.find({"_id": door.id}).delete(comment="cascade-test")
 
     with pytest.raises(DocumentNotFound):
         await wooden.sync()

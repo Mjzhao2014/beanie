@@ -52,9 +52,11 @@ class DeleteMany(DeleteQuery):
             )
             documents = yield from documents_query.to_list().__await__()
             for document in documents:
+                rule_kwargs = dict(self.pymongo_kwargs)
                 yield from document._apply_reference_delete_rules(
                     session=self.session,
                     bulk_writer=self.bulk_writer,
+                    **rule_kwargs,
                 ).__await__()
         if self.bulk_writer is None:
             return (
@@ -90,9 +92,11 @@ class DeleteOne(DeleteQuery):
                 **self.pymongo_kwargs,
             ).__await__()
             if document is not None:
+                rule_kwargs = dict(self.pymongo_kwargs)
                 yield from document._apply_reference_delete_rules(
                     session=self.session,
                     bulk_writer=self.bulk_writer,
+                    **rule_kwargs,
                 ).__await__()
         if self.bulk_writer is None:
             return (
