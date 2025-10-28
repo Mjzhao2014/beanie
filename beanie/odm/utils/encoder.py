@@ -101,6 +101,9 @@ class Encoder:
             obj_dict[settings.class_id] = obj._class_id
 
         link_fields = obj.get_link_fields() or {}
+        link_fields_by_store_key = {
+            info.lookup_field_name: info for info in link_fields.values()
+        }
         sub_encoder = Encoder(
             # don't propagate self.exclude to subdocuments
             custom_encoders=settings.bson_encoders,
@@ -108,8 +111,11 @@ class Encoder:
             keep_nulls=self.keep_nulls,
         )
         for key, value in self._iter_model_items(obj):
-            if key in link_fields:
-                link_type = link_fields[key].link_type
+            link_info = link_fields_by_store_key.get(key)
+            if link_info is None and key in link_fields:
+                link_info = link_fields[key]
+            if link_info is not None:
+                link_type = link_info.link_type
                 if link_type in (LinkTypes.DIRECT, LinkTypes.OPTIONAL_DIRECT):
                     if value is not None:
                         value = value.to_ref()
