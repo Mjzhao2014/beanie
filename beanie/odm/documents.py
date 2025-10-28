@@ -1027,11 +1027,9 @@ class Document(
                 elif rule == ReferenceDeleteRules.CASCADE:
                     cascade_queries.append(query)
                 elif rule == ReferenceDeleteRules.SET_NULL:
+                    field_path = str(getattr(doc_cls, field_name))
                     set_null_updates.append(
-                        (
-                            query,
-                            {"$set": {link_info.lookup_field_name: None}},
-                        )
+                        (query, {"$set": {field_path: None}})
                     )
                 elif rule == ReferenceDeleteRules.PULL_FROM_LIST:
                     # Build DBRef for this document to pull from list fields
@@ -1039,11 +1037,9 @@ class Document(
                         collection=self.get_settings().name,
                         id=self.id,
                     )
+                    field_path = str(getattr(doc_cls, field_name))
                     pull_updates.append(
-                        (
-                            query,
-                            {"$pull": {link_info.lookup_field_name: ref}},
-                        )
+                        (query, {"$pull": {field_path: ref}})
                     )
 
         # Execute cascades
