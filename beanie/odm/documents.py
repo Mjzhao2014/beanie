@@ -13,6 +13,7 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Set,
     Tuple,
     Type,
     TypeVar,
@@ -878,6 +879,7 @@ class Document(
         bulk_writer: Optional[BulkWriter] = None,
         link_rule: DeleteRules = DeleteRules.DO_NOTHING,
         skip_actions: Optional[List[Union[ActionDirections, str]]] = None,
+        _cascade_visited: Optional[Set[Any]] = None,
         **pymongo_kwargs: Any,
     ) -> Optional[DeleteResult]:
         """
@@ -889,6 +891,13 @@ class Document(
         :param **pymongo_kwargs: pymongo native parameters for delete operation
         :return: Optional[DeleteResult] - pymongo DeleteResult instance.
         """
+
+        if _cascade_visited is None:
+            _cascade_visited = set()
+        if self.id is not None:
+            if self.id in _cascade_visited:
+                return None
+            _cascade_visited.add(self.id)
 
         # If configured, delete links that are owned by this document
         if link_rule == DeleteRules.DELETE_LINKS:
@@ -905,6 +914,7 @@ class Document(
                         if isinstance(value, Document):
                             await value.delete(
                                 link_rule=DeleteRules.DELETE_LINKS,
+                                _cascade_visited=_cascade_visited,
                                 **pymongo_kwargs,
                             )
                     if field_info.link_type in [
@@ -918,6 +928,7 @@ class Document(
                                 *[
                                     obj.delete(
                                         link_rule=DeleteRules.DELETE_LINKS,
+                                        _cascade_visited=_cascade_visited,
                                         **pymongo_kwargs,
                                     )
                                     for obj in value
@@ -931,6 +942,7 @@ class Document(
             link_rule=link_rule,
             session=session,
             bulk_writer=bulk_writer,
+            _cascade_visited=_cascade_visited,
             **pymongo_kwargs,
         )
 
@@ -946,6 +958,7 @@ class Document(
         link_rule: DeleteRules = DeleteRules.DO_NOTHING,
         session: Optional[AsyncIOMotorClientSession] = None,
         bulk_writer: Optional[BulkWriter] = None,
+        _cascade_visited: Optional[Set[Any]] = None,
         **pymongo_kwargs: Any,
     ) -> None:
         """
@@ -963,6 +976,10 @@ class Document(
         cascade_queries: List[Any] = []
         set_null_updates: List[Tuple[Any, Dict[str, Any]]] = []
         pull_updates: List[Tuple[Any, Dict[str, Any]]] = []
+
+        if _cascade_visited is None:
+            _cascade_visited = set()
+
         # First scan for any DENY references and raise if found
         for doc_cls in DocsRegistry.all_documents():
             # Skip any registered models that are not Document subclasses
@@ -1034,10 +1051,12 @@ class Document(
                             link_rule=link_rule,
                             session=session,
                             bulk_writer=bulk_writer,
+                            _cascade_visited=_cascade_visited,
                             **pymongo_kwargs,
                         )  # type: ignore
                         for doc in referencing_docs
                         if isinstance(doc, Document)
+                        and (doc.id is None or doc.id not in _cascade_visited)
                     ]
                 )
 

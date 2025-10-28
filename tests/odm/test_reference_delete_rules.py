@@ -253,3 +253,39 @@ async def test_reference_delete_rules_apply_to_subclasses(db):
 
     with pytest.raises(DocumentNotFound):
         await house.sync()
+
+
+async def test_cascade_delete_handles_cycles(db):
+    """Ensure cascading deletes terminate when references form a cycle."""
+
+    class NodeA(Document):
+        other: Annotated[
+            Optional[Link["NodeB"]],
+            ReferenceDeleteRules.CASCADE,
+        ] = None
+
+    class NodeB(Document):
+        other: Annotated[
+            Optional[Link[NodeA]],
+            ReferenceDeleteRules.CASCADE,
+        ] = None
+
+    if IS_PYDANTIC_V2:
+        NodeA.model_rebuild()
+        NodeB.model_rebuild()
+    else:
+        NodeA.update_forward_refs()
+        NodeB.update_forward_refs()
+
+    await init_beanie(database=db, document_models=[NodeA, NodeB])
+
+    node_a = await NodeA().insert()
+    node_b = await NodeB(other=node_a).insert()
+
+    node_a.other = node_b
+    await node_a.save()
+
+    await node_a.delete()
+
+    assert await NodeA.get(node_a.id) is None
+    assert await NodeB.get(node_b.id) is None
