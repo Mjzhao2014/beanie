@@ -1028,7 +1028,10 @@ class Document(
                     cascade_queries.append(query)
                 elif rule == ReferenceDeleteRules.SET_NULL:
                     set_null_updates.append(
-                        (query, {"$set": {field_name: None}})
+                        (
+                            query,
+                            {"$set": {link_info.lookup_field_name: None}},
+                        )
                     )
                 elif rule == ReferenceDeleteRules.PULL_FROM_LIST:
                     # Build DBRef for this document to pull from list fields
@@ -1037,7 +1040,10 @@ class Document(
                         id=self.id,
                     )
                     pull_updates.append(
-                        (query, {"$pull": {field_name: ref}})
+                        (
+                            query,
+                            {"$pull": {link_info.lookup_field_name: ref}},
+                        )
                     )
 
         # Execute cascades

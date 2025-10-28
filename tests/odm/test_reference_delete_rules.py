@@ -289,3 +289,39 @@ async def test_cascade_delete_handles_cycles(db):
 
     assert await NodeA.get(node_a.id) is None
     assert await NodeB.get(node_b.id) is None
+
+
+async def test_reference_delete_rules_honor_field_aliases(db):
+    """SET_NULL and PULL_FROM_LIST should update aliased link fields correctly."""
+
+    class DoorAlias(Document):
+        height: int = 1
+
+    class HouseSetAlias(Document):
+        door: Annotated[
+            Optional[Link[DoorAlias]],
+            ReferenceDeleteRules.SET_NULL,
+        ] = Field(default=None, alias="door_alias")
+
+    class HousePullAlias(Document):
+        doors: Annotated[
+            list[Link[DoorAlias]],
+            ReferenceDeleteRules.PULL_FROM_LIST,
+        ] = Field(default_factory=list, alias="doors_alias")
+
+    await init_beanie(
+        database=db,
+        document_models=[DoorAlias, HouseSetAlias, HousePullAlias],
+    )
+
+    door = await DoorAlias().insert()
+    house_set = await HouseSetAlias(door=door).insert()
+    house_pull = await HousePullAlias(doors=[door]).insert()
+
+    await door.delete()
+
+    await house_set.sync()
+    assert house_set.door is None
+
+    await house_pull.sync()
+    assert house_pull.doors == []

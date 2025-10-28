@@ -243,7 +243,7 @@ class Initializer:
                 if cls is Link:
                     return LinkInfo(
                         field_name=field_name,
-                        lookup_field_name=field_name,
+                        lookup_field_name=field.alias or field_name,
                         document_class=DocsRegistry.evaluate_fr(args[0]),  # type: ignore
                         link_type=LinkTypes.DIRECT,
                     )
@@ -267,7 +267,7 @@ class Initializer:
                 if cls is Link:
                     return LinkInfo(
                         field_name=field_name,
-                        lookup_field_name=field_name,
+                        lookup_field_name=field.alias or field_name,
                         document_class=DocsRegistry.evaluate_fr(
                             get_args(args[0])[0]
                         ),  # type: ignore
@@ -305,7 +305,7 @@ class Initializer:
                     if cls is Link:
                         return LinkInfo(
                             field_name=field_name,
-                            lookup_field_name=field_name,
+                            lookup_field_name=field.alias or field_name,
                             document_class=DocsRegistry.evaluate_fr(
                                 optional_args[0]
                             ),  # type: ignore
@@ -332,7 +332,7 @@ class Initializer:
                     if cls is Link:
                         return LinkInfo(
                             field_name=field_name,
-                            lookup_field_name=field_name,
+                            lookup_field_name=field.alias or field_name,
                             document_class=DocsRegistry.evaluate_fr(
                                 get_args(optional_args[0])[0]
                             ),  # type: ignore
