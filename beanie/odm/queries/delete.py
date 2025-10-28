@@ -29,7 +29,10 @@ class DeleteQuery(SessionMethods, CloneInterface):
         self.find_query = find_query
         self.session: Optional[AsyncIOMotorClientSession] = None
         self.bulk_writer = bulk_writer
-        self.pymongo_kwargs: Dict[str, Any] = pymongo_kwargs
+        self.pymongo_kwargs: Dict[str, Any] = dict(pymongo_kwargs)
+        self._reference_rules_applied = self.pymongo_kwargs.pop(
+            "_reference_rules_applied", False
+        )
 
 
 class DeleteMany(DeleteQuery):
@@ -40,6 +43,23 @@ class DeleteMany(DeleteQuery):
         Run the query
         :return:
         """
+        if not self._reference_rules_applied:
+            documents_query = self.document_model.find_many(
+                self.find_query,
+                session=self.session,
+                ignore_cache=True,
+                **self.pymongo_kwargs,
+            )
+            documents = yield from documents_query.to_list().__await__()
+
+            for document in documents:
+                rule_kwargs = dict(self.pymongo_kwargs)
+
+                yield from document._apply_reference_delete_rules(
+                    session=self.session,
+                    bulk_writer=self.bulk_writer,
+                    **rule_kwargs,
+                ).__await__()
         if self.bulk_writer is None:
             return (
                 yield from self.document_model.get_motor_collection()
@@ -66,6 +86,21 @@ class DeleteOne(DeleteQuery):
         Run the query
         :return:
         """
+        if not self._reference_rules_applied:
+            document = yield from self.document_model.find_one(
+                self.find_query,
+                session=self.session,
+                ignore_cache=True,
+                **self.pymongo_kwargs,
+            ).__await__()
+            if document is not None:
+                rule_kwargs = dict(self.pymongo_kwargs)
+
+                yield from document._apply_reference_delete_rules(
+                    session=self.session,
+                    bulk_writer=self.bulk_writer,
+                    **rule_kwargs,
+                ).__await__()
         if self.bulk_writer is None:
             return (
                 yield from self.document_model.get_motor_collection()
