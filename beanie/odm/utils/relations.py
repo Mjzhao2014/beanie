@@ -24,13 +24,26 @@ def convert_ids(
             isinstance(k, ExpressionField)
             and doc.get_link_fields() is not None
             and len(k_splitted) == 2
-            and k_splitted[0] in doc.get_link_fields().keys()  # type: ignore
             and k_splitted[1] == "id"
         ):
-            if fetch_links:
-                new_k = f"{k_splitted[0]}._id"
+            link_fields = doc.get_link_fields()  # type: ignore
+            link_info = link_fields.get(k_splitted[0]) if link_fields else None
+            if (
+                link_info is None
+                and link_fields is not None
+            ):
+                for info in link_fields.values():
+                    if info.lookup_field_name == k_splitted[0]:
+                        link_info = info
+                        break
+            if link_info is not None:
+                base_path = link_info.lookup_field_name
+                if fetch_links:
+                    new_k = f"{base_path}._id"
+                else:
+                    new_k = f"{base_path}.$id"
             else:
-                new_k = f"{k_splitted[0]}.$id"
+                new_k = k
         else:
             new_k = k
         new_v: Any
